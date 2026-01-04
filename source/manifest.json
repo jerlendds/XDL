@@ -1,0 +1,38 @@
+{
+	"$schema": "https://json.schemastore.org/chrome-manifest",
+	"name": "XDL Hover Downloader",
+	"version": "0.1.0",
+	"description": "Show a download button when hovering images or videos.",
+	"homepage_url": "https://example.com",
+	"manifest_version": 2,
+	"applications": {
+		"gecko": {
+			"id": "awesome-extension@notlmn.github.io",
+			"strict_min_version": "109.0"
+		}
+	},
+	"icons": {
+		"128": "icon.png"
+	},
+	"permissions": [
+		"storage",
+		"downloads",
+		"webRequest",
+		"webRequestBlocking",
+		"<all_urls>"
+	],
+	"content_scripts": [
+		{
+			"matches": [ "<all_urls>" ],
+			"js": [ "content.js" ],
+			"css": [ "content.css" ],
+			"run_at": "document_end"
+		}
+	],
+	"options_ui": {
+		"page": "options.html"
+	},
+	"background": {
+		"scripts": [ "background.js" ]
+	}
+}

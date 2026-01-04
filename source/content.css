@@ -1,0 +1,36 @@
+#xdl-download-button {
+	position: fixed;
+	z-index: 2147483647;
+	width: 32px;
+	height: 32px;
+	border: none;
+	border-radius: 999px;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(255, 255, 255, 0.92);
+	color: #1b1b1b;
+	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+	cursor: pointer;
+	opacity: 0;
+	transform: scale(0.92);
+	pointer-events: none;
+	transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
+}
+
+#xdl-download-button.xdl-visible {
+	opacity: 1;
+	transform: scale(1);
+	pointer-events: auto;
+}
+
+#xdl-download-button:hover {
+	background: rgba(255, 255, 255, 1);
+}
+
+#xdl-download-button svg {
+	width: 18px;
+	height: 18px;
+	fill: currentColor;
+}

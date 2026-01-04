@@ -1,0 +1,45 @@
+html {
+	min-width: 520px;
+	overflow-x: hidden;
+}
+
+body {
+	margin: 0;
+	padding: 24px;
+}
+
+.options {
+	display: grid;
+	gap: 16px;
+	max-width: 520px;
+}
+
+.options h2 {
+	margin: 0;
+	font-size: 20px;
+}
+
+.hint {
+	margin: 0;
+	color: #5b5b5b;
+	line-height: 1.4;
+}
+
+.hint code {
+	background: rgba(27, 27, 27, 0.08);
+	padding: 0 6px;
+	border-radius: 6px;
+}
+
+.option-field {
+	display: grid;
+	gap: 6px;
+	font-weight: 600;
+}
+
+.option-field input[type='text'] {
+	padding: 10px 12px;
+	border-radius: 10px;
+	border: 1px solid #c9c9c9;
+	font-size: 14px;
+}
