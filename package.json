@@ -1,4 +1,5 @@
 {
+	"name": "xdl",
 	"private": true,
 	"scripts": {
 		"build": "NODE_NO_WARNINGS=1 parcel build",
