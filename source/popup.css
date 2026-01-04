@@ -1,0 +1,92 @@
+.popup {
+	font: 14px/1.4 "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+	color: #111;
+	width: 320px;
+	padding: 16px;
+	box-sizing: border-box;
+}
+
+.popup h1 {
+	font-size: 16px;
+	margin: 0 0 6px;
+}
+
+.muted {
+	margin: 0 0 12px;
+	color: #5d5d5d;
+}
+
+.site-form {
+	display: grid;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+
+.field {
+	display: grid;
+	gap: 4px;
+	font-size: 12px;
+	color: #333;
+}
+
+.field input {
+	padding: 8px 10px;
+	border-radius: 8px;
+	border: 1px solid #c8c8c8;
+	font-size: 13px;
+}
+
+.actions {
+	display: flex;
+	gap: 8px;
+}
+
+.actions button {
+	flex: 1;
+	padding: 7px 10px;
+	border-radius: 8px;
+	border: 1px solid #bdbdbd;
+	background: #f6f6f6;
+	cursor: pointer;
+	font-size: 12px;
+}
+
+.actions .primary {
+	background: #111;
+	color: #fff;
+	border-color: #111;
+}
+
+.error {
+	min-height: 16px;
+	margin: 0;
+	font-size: 12px;
+	color: #b42318;
+}
+
+.site-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	display: grid;
+	gap: 6px;
+}
+
+.site-list li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: 8px;
+	background: #f5f5f5;
+	font-size: 12px;
+}
+
+.site-list button {
+	border: none;
+	background: transparent;
+	color: #5d5d5d;
+	cursor: pointer;
+	font-size: 12px;
+}

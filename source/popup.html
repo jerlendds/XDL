@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>XDL Hover Downloader</title>
+<link rel="stylesheet" href="popup.css">
+
+<main class="popup">
+	<h1>XDL Hover Downloader</h1>
+	<p class="muted">Hover-to-download runs only on allowed sites.</p>
+
+	<form id="site-form" class="site-form">
+		<label class="field">
+			<span>Add site</span>
+			<input id="site-input" type="text" placeholder="example.com" autocomplete="off">
+		</label>
+		<div class="actions">
+			<button type="submit" class="primary">Add</button>
+			<button type="button" id="add-current">Add current site</button>
+		</div>
+		<p id="site-error" class="error" role="alert" aria-live="polite"></p>
+	</form>
+
+	<ul id="site-list" class="site-list" role="list"></ul>
+</main>
+
+<script src="popup.js" type="module"></script>

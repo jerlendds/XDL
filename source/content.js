@@ -1,3 +1,47 @@
+const DEFAULT_ALLOWED_HOSTS = [
+	'x.com',
+	'dribbble.com',
+	'behance.com',
+	'seesaw.website',
+	'designspells.com',
+];
+
+function normalizeHost(value) {
+	if (!value || typeof value !== 'string') {
+		return '';
+	}
+	return value.trim().toLowerCase();
+}
+
+function dedupeHosts(hosts) {
+	if (!Array.isArray(hosts)) {
+		return [];
+	}
+	const seen = new Set();
+	const output = [];
+	for (const host of hosts) {
+		const normalized = normalizeHost(host);
+		if (!normalized || seen.has(normalized)) {
+			continue;
+		}
+		seen.add(normalized);
+		output.push(normalized);
+	}
+	return output;
+}
+
+function isHostAllowed(hostname, allowedHosts) {
+	const host = normalizeHost(hostname);
+	if (!host) {
+		return false;
+	}
+	const list = Array.isArray(allowedHosts) ? allowedHosts : [];
+	return list.some((allowed) => {
+		const allowedHost = normalizeHost(allowed);
+		return allowedHost && (host === allowedHost || host.endsWith(`.${allowedHost}`));
+	});
+}
+
 console.log('XDL content script loaded for', chrome.runtime.getManifest().name);
 
 const BUTTON_ID = 'xdl-download-button';
@@ -14,6 +58,9 @@ const ICON_SVG = `
 let currentTarget = null;
 let positionFrame = null;
 let downloadInProgress = false;
+let allowedHosts = DEFAULT_ALLOWED_HOSTS;
+let isAllowedSite = false;
+let listenersAttached = false;
 
 const VIDEO_CONTAINER_SELECTOR = [
 	'[data-testid="videoPlayer"]',
@@ -185,6 +232,63 @@ function schedulePositionUpdate() {
 	});
 }
 
+function attachListeners() {
+	if (listenersAttached) {
+		return;
+	}
+	listenersAttached = true;
+	document.addEventListener('pointerover', handlePointerOver, true);
+	document.addEventListener('pointerout', handlePointerOut, true);
+	window.addEventListener('scroll', schedulePositionUpdate, true);
+	window.addEventListener('resize', schedulePositionUpdate);
+}
+
+function detachListeners() {
+	if (!listenersAttached) {
+		return;
+	}
+	listenersAttached = false;
+	document.removeEventListener('pointerover', handlePointerOver, true);
+	document.removeEventListener('pointerout', handlePointerOut, true);
+	window.removeEventListener('scroll', schedulePositionUpdate, true);
+	window.removeEventListener('resize', schedulePositionUpdate);
+	if (positionFrame !== null) {
+		window.cancelAnimationFrame(positionFrame);
+		positionFrame = null;
+	}
+	hideButton();
+	const button = document.getElementById(BUTTON_ID);
+	if (button) {
+		button.remove();
+	}
+}
+
+function updateAllowedHosts(nextHosts) {
+	allowedHosts = dedupeHosts(nextHosts);
+	const allowed = isHostAllowed(window.location.hostname, allowedHosts);
+	if (allowed === isAllowedSite) {
+		return;
+	}
+	isAllowedSite = allowed;
+	if (isAllowedSite) {
+		attachListeners();
+	} else {
+		detachListeners();
+	}
+}
+
+function loadAllowedHosts() {
+	return new Promise((resolve) => {
+		chrome.storage.sync.get({ allowedHosts: DEFAULT_ALLOWED_HOSTS }, (result) => {
+			if (chrome.runtime.lastError) {
+				resolve(DEFAULT_ALLOWED_HOSTS);
+				return;
+			}
+			resolve(Array.isArray(result?.allowedHosts) ? result.allowedHosts : DEFAULT_ALLOWED_HOSTS);
+		});
+	});
+}
+
 function handlePointerOver(event) {
 	const target = getMediaTarget(event.target);
 	if (!target) {
@@ -329,8 +433,10 @@ async function handleDownloadClick(event) {
 	}
 }
 
-ensureButton();
-document.addEventListener('pointerover', handlePointerOver, true);
-document.addEventListener('pointerout', handlePointerOut, true);
-window.addEventListener('scroll', schedulePositionUpdate, true);
-window.addEventListener('resize', schedulePositionUpdate);
+loadAllowedHosts().then(updateAllowedHosts);
+chrome.storage.onChanged.addListener((changes, areaName) => {
+	if (areaName !== 'sync' || !changes.allowedHosts) {
+		return;
+	}
+	updateAllowedHosts(changes.allowedHosts.newValue || DEFAULT_ALLOWED_HOSTS);
+});

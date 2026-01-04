@@ -1,9 +1,8 @@
 {
-	"$schema": "https://json.schemastore.org/chrome-manifest",
-	"name": "XDL Hover Downloader",
+	"name": "XDL",
 	"version": "0.1.0",
 	"description": "Show a download button when hovering images or videos.",
-	"homepage_url": "https://example.com",
+	"homepage_url": "https://xdl.com",
 	"manifest_version": 2,
 	"applications": {
 		"gecko": {
@@ -13,6 +12,13 @@
 	},
 	"icons": {
 		"128": "icon.png"
+	},
+	"browser_action": {
+		"default_title": "XDL",
+		"default_popup": "popup.html",
+		"default_icon": {
+			"128": "icon.png"
+		}
 	},
 	"permissions": [
 		"storage",

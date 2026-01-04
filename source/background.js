@@ -1,6 +1,13 @@
 const DEFAULT_OPTIONS = {
 	imageFolder: '',
 	videoFolder: '',
+	allowedHosts: [
+		'x.com',
+		'dribbble.com',
+		'behance.com',
+		'seesaw.website',
+		'designspells.com',
+	],
 };
 
 const TWITTER_MEDIA_HOST = 'video.twimg.com';
@@ -23,6 +30,25 @@ function normalizeFolder(input) {
 	return parts.join('/');
 }
 
+function normalizeHost(value) {
+	if (!value || typeof value !== 'string') {
+		return '';
+	}
+	return value.trim().toLowerCase();
+}
+
+function isHostAllowed(hostname, allowedHosts) {
+	const host = normalizeHost(hostname);
+	if (!host) {
+		return false;
+	}
+	const list = Array.isArray(allowedHosts) ? allowedHosts : [];
+	return list.some((allowed) => {
+		const allowedHost = normalizeHost(allowed);
+		return allowedHost && (host === allowedHost || host.endsWith(`.${allowedHost}`));
+	});
+}
+
 function extractFilename(url) {
 	try {
 		const parsed = new URL(url);
@@ -37,12 +63,45 @@ function extractFilename(url) {
 	return '';
 }
 
+function extractExtensionFromUrl(url) {
+	try {
+		const parsed = new URL(url);
+		const path = parsed.pathname || '';
+		const lastDot = path.lastIndexOf('.');
+		if (lastDot !== -1 && lastDot < path.length - 1) {
+			return path.slice(lastDot).toLowerCase();
+		}
+		const format = parsed.searchParams.get('format') || parsed.searchParams.get('fm') || parsed.searchParams.get('ext');
+		if (format && /^[a-z0-9]+$/i.test(format)) {
+			return `.${format.toLowerCase()}`;
+		}
+	} catch (error) {
+		// Ignore invalid URLs.
+	}
+	return '';
+}
+
+function ensureImageExtension(filename, url, mediaType) {
+	if (mediaType !== 'image') {
+		return filename;
+	}
+	if (/\.[a-z0-9]{2,5}$/i.test(filename)) {
+		return filename;
+	}
+	const extension = extractExtensionFromUrl(url);
+	if (!extension) {
+		return filename;
+	}
+	return `${filename}${extension}`;
+}
+
 function buildFilename(url, folder, mediaType) {
 	const baseName = extractFilename(url) || `${mediaType || 'download'}-${Date.now()}`;
+	const withExtension = ensureImageExtension(baseName, url, mediaType);
 	if (!folder) {
-		return baseName;
+		return withExtension;
 	}
-	return `${folder}/${baseName}`;
+	return `${folder}/${withExtension}`;
 }
 
 function buildFilenameFromHint(folder, filenameHint, mediaType) {
@@ -230,13 +289,36 @@ function getOptions() {
 	});
 }
 
-async function handleDownloadRequest(message) {
+function getSenderHostname(sender) {
+	const url = sender?.tab?.url || '';
+	if (!url) {
+		return '';
+	}
+	try {
+		return new URL(url).hostname;
+	} catch (error) {
+		return '';
+	}
+}
+
+async function ensureAllowedSender(sender, options) {
+	const hostname = getSenderHostname(sender);
+	if (!hostname) {
+		return;
+	}
+	if (!isHostAllowed(hostname, options.allowedHosts)) {
+		throw new Error('Site not allowed');
+	}
+}
+
+async function handleDownloadRequest(message, sender) {
 	const { url, mediaType } = message;
 	if (!url) {
 		throw new Error('Missing URL');
 	}
 
 	const options = await getOptions();
+	await ensureAllowedSender(sender, options);
 	const folder = normalizeFolder(mediaType === 'video' ? options.videoFolder : options.imageFolder);
 	const filename = buildFilename(url, folder, mediaType);
 
@@ -249,13 +331,14 @@ async function handleDownloadRequest(message) {
 	return { ok: true, downloadId };
 }
 
-async function handleBlobDownloadRequest(message) {
+async function handleBlobDownloadRequest(message, sender) {
 	const { data, mimeType, filenameHint, mediaType } = message;
 	if (!data) {
 		throw new Error('Missing blob data');
 	}
 
 	const options = await getOptions();
+	await ensureAllowedSender(sender, options);
 	const folder = normalizeFolder(mediaType === 'video' ? options.videoFolder : options.imageFolder);
 	const filename = buildFilenameFromHint(folder, filenameHint, mediaType);
 	const blob = new Blob([data], { type: mimeType || 'application/octet-stream' });
@@ -282,7 +365,7 @@ async function handleTwitterVideoDownload(message, sender) {
 	if (!url) {
 		throw new Error('Unable to resolve Twitter video URL');
 	}
-	return handleDownloadRequest({ url, mediaType: 'video' });
+	return handleDownloadRequest({ url, mediaType: 'video' }, sender);
 }
 
 if (chrome.webRequest?.onBeforeRequest) {
@@ -345,7 +428,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	}
 
 	if (message.type === 'download-media') {
-		handleDownloadRequest(message)
+		handleDownloadRequest(message, sender)
 			.then((result) => sendResponse(result))
 			.catch((error) => {
 				console.warn('XDL: Download failed', error);
@@ -355,7 +438,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	}
 
 	if (message.type === 'download-media-blob') {
-		handleBlobDownloadRequest(message)
+		handleBlobDownloadRequest(message, sender)
 			.then((result) => sendResponse(result))
 			.catch((error) => {
 				console.warn('XDL: Blob download failed', error);
