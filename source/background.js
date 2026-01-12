@@ -81,23 +81,24 @@ function extractExtensionFromUrl(url) {
 	return '';
 }
 
-function ensureImageExtension(filename, url, mediaType) {
-	if (mediaType !== 'image') {
-		return filename;
-	}
+function ensureExtension(filename, url, mimeType) {
 	if (/\.[a-z0-9]{2,5}$/i.test(filename)) {
 		return filename;
 	}
-	const extension = extractExtensionFromUrl(url);
-	if (!extension) {
-		return filename;
+	const urlExtension = extractExtensionFromUrl(url);
+	if (urlExtension) {
+		return `${filename}${urlExtension}`;
 	}
-	return `${filename}${extension}`;
+	const mimeExtension = extensionFromMimeType(mimeType);
+	if (mimeExtension) {
+		return `${filename}${mimeExtension}`;
+	}
+	return filename;
 }
 
-function buildFilename(url, folder, mediaType) {
+function buildFilename(url, folder, mediaType, mimeType) {
 	const baseName = extractFilename(url) || `${mediaType || 'download'}-${Date.now()}`;
-	const withExtension = ensureImageExtension(baseName, url, mediaType);
+	const withExtension = ensureExtension(baseName, url, mimeType);
 	if (!folder) {
 		return withExtension;
 	}
@@ -320,7 +321,8 @@ async function handleDownloadRequest(message, sender) {
 	const options = await getOptions();
 	await ensureAllowedSender(sender, options);
 	const folder = normalizeFolder(mediaType === 'video' ? options.videoFolder : options.imageFolder);
-	const filename = buildFilename(url, folder, mediaType);
+	const mimeType = await fetchContentType(url);
+	const filename = buildFilename(url, folder, mediaType, mimeType);
 
 	const downloadId = await chrome.downloads.download({
 		url,
@@ -420,6 +422,34 @@ if (chrome.webRequest?.onBeforeRequest) {
 		twitterRequestsByTab.delete(tabId);
 		twitterVariantsByTab.delete(tabId);
 	});
+}
+
+function extensionFromMimeType(mimeType) {
+	const normalized = (mimeType || '').split(';')[0].trim().toLowerCase();
+	const map = {
+		'video/mp4': '.mp4',
+		'video/webm': '.webm',
+		'video/ogg': '.ogv',
+		'image/jpeg': '.jpg',
+		'image/jpg': '.jpg',
+		'image/png': '.png',
+		'image/gif': '.gif',
+		'image/webp': '.webp',
+		'image/avif': '.avif',
+		'image/svg+xml': '.svg',
+		'image/bmp': '.bmp',
+		'image/tiff': '.tiff',
+	};
+	return map[normalized] || '';
+}
+
+async function fetchContentType(url) {
+	try {
+		const response = await fetch(url, { method: 'HEAD' });
+		return response.headers.get('content-type') || '';
+	} catch {
+		return '';
+	}
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
