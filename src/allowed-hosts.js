@@ -1,10 +1,13 @@
 export const DEFAULT_ALLOWED_HOSTS = [
 	'x.com',
-	'dribbble.com',
-	'behance.com',
-	'seesaw.website',
-	'designspells.com',
+	'twitter.com',
+	'abs.twimg.com',
+	'api.x.com',
+	'pbs.twimg.com',
+	'video.twimg.com',
 ];
+
+const SUPPORTED_HOSTS = new Set(DEFAULT_ALLOWED_HOSTS);
 
 export const DEFAULT_OPTIONS = {
 	imageFolder: '',
@@ -44,7 +47,7 @@ export function dedupeHosts(hosts) {
 	const output = [];
 	for (const host of hosts) {
 		const normalized = normalizeHost(host);
-		if (!normalized || seen.has(normalized)) {
+		if (!normalized || !SUPPORTED_HOSTS.has(normalized) || seen.has(normalized)) {
 			continue;
 		}
 		seen.add(normalized);
@@ -53,14 +56,7 @@ export function dedupeHosts(hosts) {
 	return output;
 }
 
-export function isHostAllowed(hostname, allowedHosts) {
+export function isHostAllowed(hostname) {
 	const host = normalizeHost(hostname);
-	if (!host) {
-		return false;
-	}
-	const list = Array.isArray(allowedHosts) ? allowedHosts : [];
-	return list.some((allowed) => {
-		const allowedHost = normalizeHost(allowed);
-		return allowedHost && (host === allowedHost || host.endsWith(`.${allowedHost}`));
-	});
+	return SUPPORTED_HOSTS.has(host);
 }

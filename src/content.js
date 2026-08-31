@@ -1,10 +1,13 @@
 const DEFAULT_ALLOWED_HOSTS = [
   "x.com",
-  "dribbble.com",
-  "behance.com",
-  "seesaw.website",
-  "designspells.com",
+  "twitter.com",
+  "abs.twimg.com",
+  "api.x.com",
+  "pbs.twimg.com",
+  "video.twimg.com",
 ];
+
+const SUPPORTED_HOSTS = new Set(DEFAULT_ALLOWED_HOSTS);
 
 function normalizeHost(value) {
   if (!value || typeof value !== "string") {
@@ -21,7 +24,7 @@ function dedupeHosts(hosts) {
   const output = [];
   for (const host of hosts) {
     const normalized = normalizeHost(host);
-    if (!normalized || seen.has(normalized)) {
+    if (!normalized || !SUPPORTED_HOSTS.has(normalized) || seen.has(normalized)) {
       continue;
     }
     seen.add(normalized);
@@ -30,18 +33,9 @@ function dedupeHosts(hosts) {
   return output;
 }
 
-function isHostAllowed(hostname, allowedHosts) {
+function isHostAllowed(hostname) {
   const host = normalizeHost(hostname);
-  if (!host) {
-    return false;
-  }
-  const list = Array.isArray(allowedHosts) ? allowedHosts : [];
-  return list.some((allowed) => {
-    const allowedHost = normalizeHost(allowed);
-    return (
-      allowedHost && (host === allowedHost || host.endsWith(`.${allowedHost}`))
-    );
-  });
+  return SUPPORTED_HOSTS.has(host);
 }
 
 console.log("XDL content script loaded for", chrome.runtime.getManifest().name);
@@ -346,7 +340,7 @@ function detachListeners() {
 
 function updateAllowedHosts(nextHosts) {
   allowedHosts = dedupeHosts(nextHosts);
-  const allowed = isHostAllowed(window.location.hostname, allowedHosts);
+  const allowed = isHostAllowed(window.location.hostname);
   if (allowed === isAllowedSite) {
     return;
   }

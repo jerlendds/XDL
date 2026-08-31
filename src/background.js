@@ -5,12 +5,15 @@ const DEFAULT_OPTIONS = {
 	videoFolder: '',
 	allowedHosts: [
 		'x.com',
-		'dribbble.com',
-		'behance.com',
-		'seesaw.website',
-		'designspells.com',
+		'twitter.com',
+		'abs.twimg.com',
+		'api.x.com',
+		'pbs.twimg.com',
+		'video.twimg.com',
 	],
 };
+
+const SUPPORTED_HOSTS = new Set(DEFAULT_OPTIONS.allowedHosts);
 
 const TWITTER_MEDIA_HOST = 'video.twimg.com';
 const twitterRequestsByTab = new Map();
@@ -40,16 +43,12 @@ function normalizeHost(value) {
 	return value.trim().toLowerCase();
 }
 
-function isHostAllowed(hostname, allowedHosts) {
+function isHostAllowed(hostname) {
 	const host = normalizeHost(hostname);
 	if (!host) {
 		return false;
 	}
-	const list = Array.isArray(allowedHosts) ? allowedHosts : [];
-	return list.some((allowed) => {
-		const allowedHost = normalizeHost(allowed);
-		return allowedHost && (host === allowedHost || host.endsWith(`.${allowedHost}`));
-	});
+	return SUPPORTED_HOSTS.has(host);
 }
 
 function extractFilename(url) {
@@ -554,7 +553,7 @@ async function ensureAllowedSender(sender, options) {
 	if (!hostname) {
 		return;
 	}
-	if (!isHostAllowed(hostname, options.allowedHosts)) {
+	if (!isHostAllowed(hostname)) {
 		throw new Error('Site not allowed');
 	}
 }

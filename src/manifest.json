@@ -1,15 +1,9 @@
 {
 	"name": "XDL",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Show a download button when hovering images or videos on X/twitter.",
 	"homepage_url": "https://cypherlab.garden/tech/xdl",
 	"manifest_version": 2,
-	"applications": {
-		"gecko": {
-			"id": "xdl@garden.cypherlab",
-			"strict_min_version": "109.0"
-		}
-	},
 	"icons": {
 		"128": "icon.png"
 	},
@@ -22,7 +16,8 @@
 	},
 	"browser_specific_settings": {
 		"gecko": {
-			"id": "@extension-without-data-collection",
+			"id": "xdl@garden.cypherlab",
+			"strict_min_version": "109.0",
 			"data_collection_permissions": {
 				"required": ["none"]
 			}
@@ -33,12 +28,23 @@
 		"downloads",
 		"webRequest",
 		"webRequestBlocking",
-		"<all_urls>"
+		"https://x.com/*",
+		"https://twitter.com/*",
+		"https://api.x.com/*",
+		"https://api.twitter.com/*",
+		"https://abs.twimg.com/*",
+		"https://pbs.twimg.com/*",
+		"https://video.twimg.com/*"
 	],
 	"content_scripts": [
 		{
 			"matches": [
-				"<all_urls>"
+				"https://x.com/*",
+				"https://twitter.com/*",
+				"https://abs.twimg.com/*",
+				"https://api.x.com/*",
+				"https://pbs.twimg.com/*",
+				"https://video.twimg.com/*"
 			],
 			"js": [
 				"content.js"

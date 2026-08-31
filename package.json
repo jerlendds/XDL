@@ -1,14 +1,14 @@
 {
 	"name": "xdl",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"private": true,
 	"scripts": {
-		"build": "NODE_NO_WARNINGS=1 parcel build",
+		"build": "NODE_NO_WARNINGS=1 parcel build src/manifest.json",
 		"lint": "run-p lint:*",
 		"lint-fix": "run-p 'lint:* -- --fix'",
-		"lint:css": "stylelint source/**/*.css",
+		"lint:css": "stylelint src/**/*.css",
 		"lint:js": "xo",
-		"watch": "NODE_NO_WARNINGS=1 parcel watch --no-hmr"
+		"watch": "NODE_NO_WARNINGS=1 parcel watch src/manifest.json --no-hmr"
 	},
 	"browserslist": [
 		"last 1 Chrome version",
@@ -44,7 +44,6 @@
 	"@parcel/resolver-default": {
 		"packageExports": true
 	},
-	"source": "source/manifest.json",
 	"targets": {
 		"default": {
 			"distDir": "./distribution"
