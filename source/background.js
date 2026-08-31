@@ -1,3 +1,5 @@
+import piexif from 'piexifjs';
+
 const DEFAULT_OPTIONS = {
 	imageFolder: '',
 	videoFolder: '',
@@ -13,6 +15,7 @@ const DEFAULT_OPTIONS = {
 const TWITTER_MEDIA_HOST = 'video.twimg.com';
 const twitterRequestsByTab = new Map();
 const twitterVariantsByTab = new Map();
+const twitterMetadataByTab = new Map();
 const TWITTER_GRAPHQL_URLS = [
 	'*://x.com/i/api/graphql/*',
 	'*://twitter.com/i/api/graphql/*',
@@ -81,6 +84,22 @@ function extractExtensionFromUrl(url) {
 	return '';
 }
 
+function highestQualityTwitterImageUrl(url) {
+	try {
+		const parsed = new URL(url);
+		if (parsed.hostname !== 'pbs.twimg.com' || !parsed.pathname.startsWith('/media/')) {
+			return url;
+		}
+
+		// X serves the same image at different sizes via the `name` parameter.
+		// `orig` requests the uploaded dimensions, regardless of the size used in the feed.
+		parsed.searchParams.set('name', 'orig');
+		return parsed.toString();
+	} catch {
+		return url;
+	}
+}
+
 function ensureExtension(filename, url, mimeType) {
 	if (/\.[a-z0-9]{2,5}$/i.test(filename)) {
 		return filename;
@@ -111,6 +130,192 @@ function buildFilenameFromHint(folder, filenameHint, mediaType) {
 		return baseName;
 	}
 	return `${folder}/${baseName}`;
+}
+
+function sanitizeFilenamePart(value) {
+	return String(value || '').trim().replace(/^@/, '').replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '');
+}
+
+function buildMetadataFilename(folder, metadata, url, mimeType, fallbackMediaType) {
+	const postId = sanitizeFilenamePart(metadata?.postId);
+	const handle = sanitizeFilenamePart(metadata?.twitterHandle);
+	if (!postId || !handle) {
+		return buildFilename(url, folder, fallbackMediaType, mimeType);
+	}
+	const extension = extensionFromMimeType(mimeType) || extractExtensionFromUrl(url) || '.jpg';
+	const filename = `${postId}_${handle}${extension}`;
+	return folder ? `${folder}/${filename}` : filename;
+}
+
+function arrayBufferToDataUrl(buffer, mimeType) {
+	const bytes = new Uint8Array(buffer);
+	let binary = '';
+	const chunkSize = 0x8000;
+	for (let index = 0; index < bytes.length; index += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+	}
+	return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+function dataUrlToUint8Array(dataUrl) {
+	const payload = dataUrl.slice(dataUrl.indexOf(',') + 1);
+	const binary = atob(payload);
+	const bytes = new Uint8Array(binary.length);
+	for (let index = 0; index < binary.length; index += 1) {
+		bytes[index] = binary.charCodeAt(index);
+	}
+	return bytes;
+}
+
+function toExifDate(value) {
+	if (!value) {
+		return '';
+	}
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) {
+		return '';
+	}
+	return date.toISOString().slice(0, 19).replace(/[-T]/g, (character) => character === 'T' ? ' ' : ':');
+}
+
+function stringifyExifMetadata(metadata) {
+	const toAsciiJson = (value) => JSON.stringify(value).replace(/[\u007F-\uFFFF]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+	const full = toAsciiJson(metadata);
+	if (full.length <= 48_000) {
+		return full;
+	}
+	const { apiTweet, apiMedia, apiUser, ...pageMetadata } = metadata;
+	const apiPayload = toAsciiJson({ apiTweet, apiMedia, apiUser });
+	let payloadLength = Math.min(apiPayload.length, 32_000);
+	let bounded = '';
+	do {
+		bounded = toAsciiJson({
+			...pageMetadata,
+			apiMetadataTruncated: true,
+			apiPayload: apiPayload.slice(0, payloadLength),
+		});
+		payloadLength = Math.max(0, payloadLength - Math.max(1000, bounded.length - 47_000));
+	} while (bounded.length > 48_000 && payloadLength > 0);
+	return bounded;
+}
+
+function decimalToDmsRational(value) {
+	const degrees = Math.floor(value);
+	const minutesFloat = (value - degrees) * 60;
+	const minutes = Math.floor(minutesFloat);
+	const seconds = (minutesFloat - minutes) * 60;
+	return [ [ degrees, 1 ], [ minutes, 1 ], [ Math.round(seconds * 10_000), 10_000 ] ];
+}
+
+function getMetadataCoordinates(metadata) {
+	const coordinates = metadata?.apiTweet?.coordinates?.coordinates;
+	if (Array.isArray(coordinates) && coordinates.length >= 2) {
+		const longitude = Number(coordinates[0]);
+		const latitude = Number(coordinates[1]);
+		if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+			return { latitude, longitude };
+		}
+	}
+	return null;
+}
+
+function embedJpegMetadata(buffer, mimeType, metadata) {
+	const dataUrl = arrayBufferToDataUrl(buffer, mimeType);
+	let exif;
+	try {
+		exif = piexif.load(dataUrl);
+	} catch {
+		exif = { '0th': {}, Exif: {}, GPS: {}, Interop: {}, '1st': {}, thumbnail: null };
+	}
+	const json = stringifyExifMetadata(metadata);
+	exif['0th'][piexif.ImageIFD.Make] = 'X (Twitter)';
+	exif['0th'][piexif.ImageIFD.Model] = `@${metadata.twitterHandle || ''}`;
+	exif['0th'][piexif.ImageIFD.Artist] = metadata.userName || metadata.twitterHandle || '';
+	exif['0th'][piexif.ImageIFD.Software] = 'XDL Hover Downloader';
+	exif['0th'][piexif.ImageIFD.ImageDescription] = [metadata.postUrl, metadata.mediaUrl].filter(Boolean).join(' | ').slice(0, 2000);
+	exif['0th'][piexif.ImageIFD.DocumentName] = `${metadata.postId || ''}_${metadata.twitterHandle || ''}`;
+	exif.Exif[piexif.ExifIFD.ImageUniqueID] = `${metadata.postId || ''}:${metadata.photoNumber || 1}:${metadata.mediaId || ''}`;
+	const exifDate = toExifDate(metadata.postedAt);
+	if (exifDate) {
+		exif.Exif[piexif.ExifIFD.DateTimeOriginal] = exifDate;
+		exif.Exif[piexif.ExifIFD.DateTimeDigitized] = exifDate;
+	}
+	const coordinates = getMetadataCoordinates(metadata);
+	if (coordinates) {
+		exif.GPS[piexif.GPSIFD.GPSLatitudeRef] = coordinates.latitude >= 0 ? 'N' : 'S';
+		exif.GPS[piexif.GPSIFD.GPSLatitude] = decimalToDmsRational(Math.abs(coordinates.latitude));
+		exif.GPS[piexif.GPSIFD.GPSLongitudeRef] = coordinates.longitude >= 0 ? 'E' : 'W';
+		exif.GPS[piexif.GPSIFD.GPSLongitude] = decimalToDmsRational(Math.abs(coordinates.longitude));
+	}
+	// piexifjs defines UserComment as ASCII. Keep enough headroom for the EXIF APP1
+	// segment's 64 KiB limit while preserving the complete page payload in normal cases.
+	exif.Exif[piexif.ExifIFD.UserComment] = json;
+	const exifBytes = piexif.dump(exif);
+	return dataUrlToUint8Array(piexif.insert(exifBytes, dataUrl));
+}
+
+function crc32(bytes) {
+	let crc = 0xFFFFFFFF;
+	for (const byte of bytes) {
+		crc ^= byte;
+		for (let bit = 0; bit < 8; bit += 1) {
+			crc = (crc >>> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
+		}
+	}
+	return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function createPngChunk(type, data) {
+	const typeBytes = new TextEncoder().encode(type);
+	const output = new Uint8Array(12 + data.length);
+	const view = new DataView(output.buffer);
+	view.setUint32(0, data.length);
+	output.set(typeBytes, 4);
+	output.set(data, 8);
+	const crcInput = new Uint8Array(typeBytes.length + data.length);
+	crcInput.set(typeBytes);
+	crcInput.set(data, typeBytes.length);
+	view.setUint32(8 + data.length, crc32(crcInput));
+	return output;
+}
+
+function embedPngMetadata(buffer, metadata) {
+	const bytes = new Uint8Array(buffer);
+	const iendOffset = bytes.length - 12;
+	if (iendOffset < 8 || new TextDecoder().decode(bytes.subarray(iendOffset + 4, iendOffset + 8)) !== 'IEND') {
+		return bytes;
+	}
+	const keyword = new TextEncoder().encode('XDLMetadata');
+	const value = new TextEncoder().encode(JSON.stringify(metadata));
+	const data = new Uint8Array(keyword.length + 5 + value.length);
+	data.set(keyword);
+	data.set(value, keyword.length + 5);
+	const chunk = createPngChunk('iTXt', data);
+	const output = new Uint8Array(bytes.length + chunk.length);
+	output.set(bytes.subarray(0, iendOffset));
+	output.set(chunk, iendOffset);
+	output.set(bytes.subarray(iendOffset), iendOffset + chunk.length);
+	return output;
+}
+
+function embedImageMetadata(buffer, mimeType, metadata) {
+	const normalized = (mimeType || '').split(';')[0].trim().toLowerCase();
+	if (normalized === 'image/jpeg' || normalized === 'image/jpg') {
+		return embedJpegMetadata(buffer, 'image/jpeg', metadata);
+	}
+	if (normalized === 'image/png') {
+		return embedPngMetadata(buffer, metadata);
+	}
+	return new Uint8Array(buffer);
+}
+
+async function saveBlob(blob, filename) {
+	const objectUrl = URL.createObjectURL(blob);
+	try {
+		return await chrome.downloads.download({ url: objectUrl, filename, saveAs: false });
+	} finally {
+		setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+	}
 }
 
 function extractTwitterMediaId(url) {
@@ -210,6 +415,45 @@ function recordTwitterVariant(tabId, mediaId, variant) {
 	}
 }
 
+function recordTwitterApiMetadata(tabId, tweet) {
+	const mediaItems = tweet?.legacy?.extended_entities?.media || tweet?.legacy?.entities?.media;
+	if (!Array.isArray(mediaItems)) {
+		return;
+	}
+	const user = tweet.core?.user_results?.result || null;
+	let tabMetadata = twitterMetadataByTab.get(tabId);
+	if (!tabMetadata) {
+		tabMetadata = new Map();
+		twitterMetadataByTab.set(tabId, tabMetadata);
+	}
+	for (const media of mediaItems) {
+		const apiMetadata = {
+			apiTweet: tweet.legacy,
+			apiMedia: media,
+			apiUser: user ? {
+				restId: user.rest_id,
+				legacy: user.legacy,
+				core: user.core,
+				verification: user.verification,
+				professional: user.professional,
+			} : null,
+		};
+		const keys = [
+			normalizeMediaId(media.id_str || media.id || media.media_key),
+			normalizeMediaId(media.media_key),
+		];
+		try {
+			const mediaUrl = media.media_url_https || media.media_url || '';
+			keys.push(new URL(mediaUrl).pathname.split('/').filter(Boolean).at(-1));
+		} catch {
+			// Ignore malformed API media URLs.
+		}
+		for (const key of keys.filter(Boolean)) {
+			tabMetadata.set(key, apiMetadata);
+		}
+	}
+}
+
 function extractTwitterVariantsFromJson(data, tabId) {
 	const visited = new Set();
 	const stack = [ data ];
@@ -223,6 +467,9 @@ function extractTwitterVariantsFromJson(data, tabId) {
 			continue;
 		}
 		visited.add(value);
+		if (value.legacy && (value.rest_id || value.id_str)) {
+			recordTwitterApiMetadata(tabId, value);
+		}
 
 		if (value.video_info && Array.isArray(value.video_info.variants)) {
 			const mediaId = normalizeMediaId(value.id_str || value.id || value.media_key);
@@ -313,7 +560,7 @@ async function ensureAllowedSender(sender, options) {
 }
 
 async function handleDownloadRequest(message, sender) {
-	const { url, mediaType } = message;
+	const { url, mediaType, metadata } = message;
 	if (!url) {
 		throw new Error('Missing URL');
 	}
@@ -321,11 +568,30 @@ async function handleDownloadRequest(message, sender) {
 	const options = await getOptions();
 	await ensureAllowedSender(sender, options);
 	const folder = normalizeFolder(mediaType === 'video' ? options.videoFolder : options.imageFolder);
-	const mimeType = await fetchContentType(url);
-	const filename = buildFilename(url, folder, mediaType, mimeType);
+	const downloadUrl = mediaType === 'image' ? highestQualityTwitterImageUrl(url) : url;
+	const apiMetadata = metadata?.mediaId
+		? twitterMetadataByTab.get(sender?.tab?.id)?.get(metadata.mediaId)
+		: null;
+	const completeMetadata = metadata ? { ...metadata, ...apiMetadata } : null;
+	if (mediaType === 'image' && completeMetadata?.postId && completeMetadata?.twitterHandle) {
+		const response = await fetch(downloadUrl);
+		if (!response.ok) {
+			throw new Error(`Image fetch failed with ${response.status}`);
+		}
+		const mimeType = response.headers.get('content-type') || '';
+		const embedded = embedImageMetadata(await response.arrayBuffer(), mimeType, completeMetadata);
+		const filename = buildMetadataFilename(folder, completeMetadata, downloadUrl, mimeType, mediaType);
+		const downloadId = await saveBlob(new Blob([embedded], { type: mimeType || 'application/octet-stream' }), filename);
+		return { ok: true, downloadId };
+	}
+
+	const mimeType = await fetchContentType(downloadUrl);
+	const filename = completeMetadata
+		? buildMetadataFilename(folder, completeMetadata, downloadUrl, mimeType, mediaType)
+		: buildFilename(downloadUrl, folder, mediaType, mimeType);
 
 	const downloadId = await chrome.downloads.download({
-		url,
+		url: downloadUrl,
 		filename,
 		saveAs: false,
 	});
@@ -334,7 +600,7 @@ async function handleDownloadRequest(message, sender) {
 }
 
 async function handleBlobDownloadRequest(message, sender) {
-	const { data, mimeType, filenameHint, mediaType } = message;
+	const { data, mimeType, filenameHint, mediaType, metadata } = message;
 	if (!data) {
 		throw new Error('Missing blob data');
 	}
@@ -342,17 +608,14 @@ async function handleBlobDownloadRequest(message, sender) {
 	const options = await getOptions();
 	await ensureAllowedSender(sender, options);
 	const folder = normalizeFolder(mediaType === 'video' ? options.videoFolder : options.imageFolder);
-	const filename = buildFilenameFromHint(folder, filenameHint, mediaType);
-	const blob = new Blob([data], { type: mimeType || 'application/octet-stream' });
-	const objectUrl = URL.createObjectURL(blob);
-
-	const downloadId = await chrome.downloads.download({
-		url: objectUrl,
-		filename,
-		saveAs: false,
-	});
-
-	setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+	const filename = metadata
+		? buildMetadataFilename(folder, metadata, metadata.mediaUrl || '', mimeType, mediaType)
+		: buildFilenameFromHint(folder, filenameHint, mediaType);
+	const embedded = mediaType === 'image' && metadata
+		? embedImageMetadata(data, mimeType, metadata)
+		: new Uint8Array(data);
+	const blob = new Blob([embedded], { type: mimeType || 'application/octet-stream' });
+	const downloadId = await saveBlob(blob, filename);
 
 	return { ok: true, downloadId };
 }
@@ -367,7 +630,7 @@ async function handleTwitterVideoDownload(message, sender) {
 	if (!url) {
 		throw new Error('Unable to resolve Twitter video URL');
 	}
-	return handleDownloadRequest({ url, mediaType: 'video' }, sender);
+	return handleDownloadRequest({ url, mediaType: 'video', metadata: message.metadata }, sender);
 }
 
 if (chrome.webRequest?.onBeforeRequest) {
@@ -421,6 +684,7 @@ if (chrome.webRequest?.onBeforeRequest) {
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		twitterRequestsByTab.delete(tabId);
 		twitterVariantsByTab.delete(tabId);
+		twitterMetadataByTab.delete(tabId);
 	});
 }
 

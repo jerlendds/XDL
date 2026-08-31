@@ -49,6 +49,8 @@ console.log("XDL content script loaded for", chrome.runtime.getManifest().name);
 const BUTTON_ID = "xdl-download-button";
 const VISIBLE_CLASS = "xdl-visible";
 const TWITTER_HOSTS = ["x.com", "twitter.com", "mobile.twitter.com"];
+const DEFAULT_BUTTON_INSET = 6;
+const TWITTER_BUTTON_RIGHT_INSET = 100;
 
 const ICON_SVG = `
 <svg class="_6c706db0523bd9a7-downloadHoverButtonIcon" aria-hidden="true" role="img" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a1 1 0 0 1 1 1v10.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V3a1 1 0 0 1 1-1ZM3 20a1 1 0 1 0 0 2h18a1 1 0 1 0 0-2H3Z" class=""></path></svg>
@@ -94,11 +96,13 @@ function getTwitterMediaId(target) {
 }
 
 function requestTwitterVideoDownload(target) {
+  const metadata = getTwitterMediaMetadata(target);
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(
       {
         type: "download-twitter-video",
         mediaId: getTwitterMediaId(target),
+        metadata,
       },
       (response) => {
         if (chrome.runtime.lastError) {
@@ -109,6 +113,64 @@ function requestTwitterVideoDownload(target) {
       }
     );
   });
+}
+
+function getTwitterMediaMetadata(target) {
+  if (!target || !isTwitterHost()) {
+    return null;
+  }
+
+  const article = target.closest("article");
+  const postTime = article?.querySelector("time");
+  const statusLink = postTime?.closest('a[href*="/status/"]') ||
+    article?.querySelector('a[href*="/status/"]') ||
+    document.querySelector('a[href*="/status/"]');
+  const statusPath = statusLink?.getAttribute("href") || window.location.pathname;
+  const statusMatch = statusPath.match(/\/([^/]+)\/status\/(\d+)/);
+  const handle = statusMatch?.[1] || "";
+  const postId = statusMatch?.[2] || "";
+  const postUrl = postId && handle
+    ? `https://x.com/${handle}/status/${postId}`
+    : window.location.href;
+  const media = article
+    ? [...article.querySelectorAll("img, video")].filter((element) => {
+        const mediaUrl = resolveMediaUrl(element);
+        return element.tagName === "VIDEO" || mediaUrl.includes("pbs.twimg.com/media/");
+      })
+    : [target];
+  const photoNumber = Math.max(1, media.indexOf(target) + 1);
+  const userName = article?.querySelector('[data-testid="User-Name"]')
+    ?.textContent?.split("@")[0]?.trim() || "";
+  const postText = article?.querySelector('[data-testid="tweetText"]')
+    ?.textContent?.trim() || "";
+  const time = postTime;
+  const mediaUrl = resolveMediaUrl(target);
+  let mediaId = getTwitterMediaId(target);
+  if (!mediaId) {
+    try {
+      mediaId = new URL(mediaUrl).pathname.split("/").filter(Boolean).at(-1) || "";
+    } catch {
+      mediaId = "";
+    }
+  }
+
+  return {
+    source: "X (Twitter)",
+    pageUrl: window.location.href,
+    postUrl,
+    postId,
+    photoNumber,
+    twitterHandle: handle,
+    userName,
+    postText,
+    postedAt: time?.dateTime || time?.getAttribute("datetime") || "",
+    altText: target.getAttribute("alt") || "",
+    mediaUrl,
+    mediaId,
+    mediaType: target.tagName === "VIDEO" ? "video" : "image",
+    width: target.videoWidth || target.naturalWidth || target.clientWidth || 0,
+    height: target.videoHeight || target.naturalHeight || target.clientHeight || 0,
+  };
 }
 
 function ensureButton() {
@@ -220,13 +282,20 @@ function updateButtonPosition() {
   }
 
   const size = 32;
-  const padding = 6;
+  const padding = DEFAULT_BUTTON_INSET;
+  const desiredRightInset = isTwitterHost()
+    ? TWITTER_BUTTON_RIGHT_INSET
+    : padding;
+  const rightInset = Math.min(
+    desiredRightInset,
+    Math.max(padding, rect.width - size - padding)
+  );
   const top = Math.min(
     Math.max(rect.top + padding, 4),
     window.innerHeight - size - 4
   );
   const left = Math.min(
-    Math.max(rect.right - size - padding, 4),
+    Math.max(rect.right - size - rightInset, Math.max(rect.left + padding, 4)),
     window.innerWidth - size - 4
   );
 
@@ -378,7 +447,7 @@ function extensionFromMimeType(mimeType) {
   return map[normalized] || "";
 }
 
-async function downloadBlobUrl(url, mediaType) {
+async function downloadBlobUrl(url, mediaType, metadata = null) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Fetch failed with ${response.status}`);
@@ -397,6 +466,7 @@ async function downloadBlobUrl(url, mediaType) {
         mimeType,
         filenameHint,
         mediaType,
+        metadata,
       },
       (responseMessage) => {
         if (chrome.runtime.lastError) {
@@ -423,6 +493,7 @@ async function handleDownloadClick(event) {
 
   const url = resolveMediaUrl(currentTarget);
   const mediaType = currentTarget.tagName === "VIDEO" ? "video" : "image";
+  const metadata = getTwitterMediaMetadata(currentTarget);
   downloadInProgress = true;
 
   try {
@@ -445,13 +516,13 @@ async function handleDownloadClick(event) {
       return;
     }
     if (isBlobUrl(url)) {
-      const response = await downloadBlobUrl(url, mediaType);
+      const response = await downloadBlobUrl(url, mediaType, metadata);
       if (!response.ok) {
         console.warn("XDL: Download failed", response.error);
       }
     } else {
       chrome.runtime.sendMessage(
-        { type: "download-media", url, mediaType },
+        { type: "download-media", url, mediaType, metadata },
         (response) => {
           if (chrome.runtime.lastError) {
             console.warn(

@@ -5,6 +5,7 @@ Firefox extension that adds a download button when you hover images or videos, w
 ## Features
 
 - Hover-to-download button on images and videos.
+- Original-quality X/Twitter image downloads, even when downloading from a feed thumbnail.
 - Optimized X/Twitter video downloads (prefers the best available MP4 variant).
 - Supports blob URLs by streaming the data through the background script.
 - Optional subfolders for images and videos.
@@ -15,7 +16,7 @@ Firefox extension that adds a download button when you hover images or videos, w
 2. Hover a media element to reveal the download button.
 3. Click the button to download the media.
 
-For X/Twitter videos, the extension listens for media requests and GraphQL responses to find a progressive MP4 URL before downloading.
+For X/Twitter images, the extension requests the original uploaded dimensions instead of the feed thumbnail. For videos, it listens for media requests and GraphQL responses to find a progressive MP4 URL before downloading.
 
 ## Options
 

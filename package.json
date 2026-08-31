@@ -1,5 +1,6 @@
 {
 	"name": "xdl",
+	"version": "0.2.0",
 	"private": true,
 	"scripts": {
 		"build": "NODE_NO_WARNINGS=1 parcel build",
@@ -7,7 +8,6 @@
 		"lint-fix": "run-p 'lint:* -- --fix'",
 		"lint:css": "stylelint source/**/*.css",
 		"lint:js": "xo",
-		"test": "run-p lint:* build",
 		"watch": "NODE_NO_WARNINGS=1 parcel watch --no-hmr"
 	},
 	"browserslist": [
@@ -30,6 +30,7 @@
 		"rules": {}
 	},
 	"dependencies": {
+		"piexifjs": "^1.0.6",
 		"webext-base-css": "^2.0.1",
 		"webext-options-sync": "^4.2.3"
 	},
@@ -38,17 +39,14 @@
 		"@parcel/resolver-default": "^2.13.0",
 		"npm-run-all2": "^7.0.1",
 		"parcel": "^2.13.0",
-		"stylelint": "^16.6.1",
-		"stylelint-config-prettier": "^9.0.5",
-		"stylelint-config-xo": "^1.0.2",
 		"xo": "^0.59.3"
 	},
 	"@parcel/resolver-default": {
 		"packageExports": true
 	},
+	"source": "source/manifest.json",
 	"targets": {
 		"default": {
-			"source": "source/manifest.json",
 			"distDir": "./distribution"
 		}
 	},
@@ -56,7 +54,7 @@
 		"sourceDir": "distribution",
 		"run": {
 			"startUrl": [
-				"https://github.com/fregante/browser-extension-template"
+				"https://github.com/jerlendds/XDL"
 			]
 		}
 	}
